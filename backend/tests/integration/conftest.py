@@ -51,6 +51,34 @@ def _require_database() -> None:
         )
 
 
+@pytest.fixture(autouse=True)
+async def _reset_rate_limiter() -> AsyncIterator[None]:
+    """Clear login rate-limit counters around every test.
+
+    Two reasons this is needed. The counters live in Redis and would otherwise
+    carry between tests: the test client presents a fixed source address, so
+    failed-login tests share one IP bucket and would trip the limit for
+    unrelated tests. And the limiter caches its Redis client at module level;
+    pytest-asyncio gives each test its own event loop, so the cached client must
+    be dropped between tests or it ends up bound to a closed loop.
+    """
+    import redis.asyncio as aioredis
+
+    from app.core import ratelimit
+
+    async def _flush() -> None:
+        await ratelimit.close_ratelimit_client()
+        client = aioredis.from_url(settings.redis_ratelimit_uri)  # type: ignore[no-untyped-call]
+        try:
+            await client.flushdb()
+        finally:
+            await client.aclose()
+
+    await _flush()
+    yield
+    await _flush()
+
+
 @pytest.fixture
 async def db_engine() -> AsyncIterator[AsyncEngine]:
     """Yield an engine that never reuses a connection across tests.

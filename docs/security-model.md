@@ -278,9 +278,14 @@ Two limits worth stating plainly:
 
 - **`SECRET_KEY` is the platform's root secret.** Anyone holding it can mint a token for any
   account, including an administrator, without touching the database.
-- **There is no login rate limit.** Nothing slows repeated password attempts against a known
-  address. Argon2's cost makes each attempt expensive, which is mitigation rather than a control;
-  a counter in Redis keyed on address and source is the next thing to add.
+- **Login is rate limited.** Failed sign-ins are counted in Redis per email and per source IP
+  over a fixed window (`LOGIN_MAX_ATTEMPTS` in `LOGIN_ATTEMPT_WINDOW_SECONDS`). Once either scope
+  reaches the limit the endpoint answers `429` with a `Retry-After` until the window passes, and
+  a lockout hides a correct password too, so an attacker who exhausts their guesses cannot
+  continue. A successful sign-in clears the counters, so an operator's own typos never lock them
+  out. The limiter fails open: if Redis is unreachable it allows the attempt rather than locking
+  everyone out, and logs the event. Per-IP counting can catch several operators behind one NAT in
+  the same bucket, which is acceptable for an internal tool with few operators.
 
 ## Invariants for contributors
 

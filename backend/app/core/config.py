@@ -71,6 +71,18 @@ class Settings(BaseSettings):
     redis_password: SecretStr = Field(...)
     redis_broker_db: int = Field(default=0, ge=0, le=15)
     redis_result_db: int = Field(default=1, ge=0, le=15)
+    # A separate logical database so rate-limit keys never collide with Celery's
+    # broker or result data.
+    redis_ratelimit_db: int = Field(default=2, ge=0, le=15)
+
+    # -- Login rate limiting --------------------------------------------------
+    # Failed sign-ins are counted per email and per source IP over a fixed
+    # window. Once the count reaches the limit, further attempts for that scope
+    # are refused with 429 until the window expires. A successful sign-in clears
+    # the counters, so an operator typing their password correctly is never
+    # penalised for earlier typos.
+    login_max_attempts: int = Field(default=5, ge=1, le=100)
+    login_attempt_window_seconds: int = Field(default=900, ge=30, le=86400)
 
     # -- HTTP surface ---------------------------------------------------------
     # Stored as raw strings because pydantic-settings would otherwise attempt a
@@ -186,6 +198,14 @@ class Settings(BaseSettings):
         return (
             f"redis://:{self.redis_password.get_secret_value()}@"
             f"{self.redis_host}:{self.redis_port}/{self.redis_result_db}"
+        )
+
+    @property
+    def redis_ratelimit_uri(self) -> str:
+        """Redis DSN used for login rate-limit counters."""
+        return (
+            f"redis://:{self.redis_password.get_secret_value()}@"
+            f"{self.redis_host}:{self.redis_port}/{self.redis_ratelimit_db}"
         )
 
 

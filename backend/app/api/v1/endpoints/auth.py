@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from app.api.dependencies import PrincipalDep, SessionDep
 from app.core.config import settings
@@ -12,6 +12,11 @@ from app.core.passwords import (
     hash_password,
     needs_rehash,
     verify_password,
+)
+from app.core.ratelimit import (
+    check_login_allowed,
+    record_failed_login,
+    reset_login_counters,
 )
 from app.core.security import create_access_token
 from app.repositories.user import get_user_by_email, get_user_by_id, record_successful_login
@@ -27,40 +32,63 @@ logger = get_logger(__name__)
 _INVALID_CREDENTIALS = "Invalid email or password."
 
 
+def _client_ip(request: Request) -> str:
+    """Best-effort source address for rate limiting.
+
+    In production Uvicorn runs with ``--proxy-headers``, so ``request.client``
+    already reflects the forwarded client address rather than the proxy. A
+    missing client (possible in some test transports) falls back to a constant,
+    which simply means all such attempts share one bucket.
+    """
+    return request.client.host if request.client else "unknown"
+
+
 @router.post(
     "/login",
     response_model=LoginResponse,
     summary="Sign in and receive a bearer token",
 )
-async def login(payload: LoginRequest, session: SessionDep) -> LoginResponse:
+async def login(payload: LoginRequest, request: Request, session: SessionDep) -> LoginResponse:
     """Exchange an email and password for an access token.
 
-    The password is verified even when the address is unknown, against a dummy
-    hash, so a failed sign-in takes the same time either way and cannot be used
-    to enumerate accounts.
+    Failed attempts are rate limited per email and per source IP, so the
+    endpoint cannot be used to guess passwords at speed. Within the limit, the
+    password is verified even when the address is unknown, against a dummy hash,
+    so a failed sign-in takes the same time either way and cannot be used to
+    enumerate accounts.
 
     Raises:
-        HTTPException: 401 for any failure, with one message for all of them.
+        HTTPException: 429 when the attempt limit is reached, otherwise 401 for
+            any failure with one message for all of them.
     """
+    ip = _client_ip(request)
+
+    decision = await check_login_allowed(email=payload.email, ip=ip)
+    if not decision.allowed:
+        logger.warning("api.login_rate_limited", email=payload.email.lower(), ip=ip)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many sign-in attempts. Try again later.",
+            headers={"Retry-After": str(decision.retry_after_seconds)},
+        )
+
     user = await get_user_by_email(session, email=payload.email)
+    credentials_ok = verify_password(payload.password, user.password_hash if user else None)
 
-    if not verify_password(payload.password, user.password_hash if user else None):
-        logger.warning("api.login_failed", email=payload.email.lower())
+    # A disabled account is treated exactly like a wrong password: same message,
+    # and the same failed-attempt accounting.
+    if not credentials_ok or user is None or not user.is_active:
+        await record_failed_login(email=payload.email, ip=ip)
+        reason = "bad credentials" if not credentials_ok else "disabled"
+        logger.warning("api.login_failed", email=payload.email.lower(), ip=ip, reason=reason)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=_INVALID_CREDENTIALS,
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # `verify_password` returning True guarantees the user exists; this keeps
-    # the type checker informed of that.
-    if user is None or not user.is_active:
-        logger.warning("api.login_rejected", email=payload.email.lower(), reason="disabled")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=_INVALID_CREDENTIALS,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # A good sign-in wipes the failure counters so earlier typos do not count.
+    await reset_login_counters(email=payload.email, ip=ip)
 
     # Upgrade the stored hash transparently when the cost parameters have moved.
     if needs_rehash(user.password_hash):

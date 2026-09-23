@@ -29,6 +29,7 @@ from app.core.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
+from app.core.ratelimit import close_ratelimit_client
 from app.db.session import dispose_engines
 
 logger = get_logger(__name__)
@@ -55,6 +56,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await dispose_engines()
+        await close_ratelimit_client()
         logger.info("api.shutdown", service=settings.service_name)
 
 
