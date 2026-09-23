@@ -289,6 +289,26 @@ Two limits worth stating plainly:
   everyone out, and logs the event. Per-IP counting can catch several operators behind one NAT in
   the same bucket, which is acceptable for an internal tool with few operators.
 
+## Audit trail
+
+Security-relevant actions are recorded in the `audit_events` table: sign-ins (succeeded, failed,
+rate-limited), account creation and deletion, password changes and resets, tenant creation and
+deletion, and scan launches. Each row carries the action, the actor (id, email and role), the
+tenant it concerned, the target, the source IP and a free-form JSON detail.
+
+The table is the one place in the schema with **no foreign keys and no cascade**, on purpose. An
+audit trail must outlive what it describes: the record of who deleted a tenant is worthless if it
+vanishes with the tenant. The actor's email, role and the tenant's code name are denormalised
+onto each row so the entry stays complete and readable after those rows are gone.
+
+Events are written in the same transaction as the action they record, so a tenant creation and
+its audit entry either both land or neither does. The events with no business transaction, the
+login outcomes, are committed on their own.
+
+The trail is read through `GET /api/v1/audit/events`, administrator only and filterable by
+action, tenant or actor. There is deliberately no tenant-scoped view: showing one customer's
+operators "who did what" is a separate decision not made here. Nothing updates or deletes a row.
+
 ## Invariants for contributors
 
 1. Every business table inherits `TenantScopedMixin`. A model may disable the direct foreign key

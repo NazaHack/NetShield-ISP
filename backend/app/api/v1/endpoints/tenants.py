@@ -15,6 +15,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path, status
 
 from app.api.dependencies import AdminDep, SessionDep, TenantScopeDep, not_found
 from app.core.logging import get_logger
+from app.models import AuditAction
+from app.repositories.audit import add_event
 from app.repositories.tenant import (
     create_tenant,
     delete_tenant,
@@ -57,6 +59,14 @@ async def create_tenant_endpoint(
         )
 
     tenant = await create_tenant(session, name=payload.name, code_name=payload.code_name)
+    add_event(
+        session,
+        action=AuditAction.TENANT_CREATED,
+        actor=admin,
+        tenant_id=tenant.id,
+        tenant_code_name=tenant.code_name,
+        target=tenant.code_name,
+    )
     await session.commit()
 
     logger.info(
@@ -141,6 +151,14 @@ async def delete_tenant_endpoint(
 
     code_name = tenant.code_name
     await delete_tenant(session, tenant=tenant)
+    add_event(
+        session,
+        action=AuditAction.TENANT_DELETED,
+        actor=admin,
+        tenant_id=tenant_id,
+        tenant_code_name=code_name,
+        target=code_name,
+    )
     await session.commit()
 
     logger.warning(

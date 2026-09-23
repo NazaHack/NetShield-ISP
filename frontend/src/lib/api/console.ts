@@ -11,6 +11,7 @@ import type {
   ScanProfile,
   Tenant,
   User,
+  AuditEvent,
 } from "./types";
 
 /**
@@ -166,4 +167,16 @@ export async function resetTenantUserPassword(
     `/api/v1/tenants/${tenantId}/users/${userId}/reset-password`,
     { method: "POST", body: { new_password: newPassword } },
   );
+}
+
+/** Read the audit trail, newest first, optionally filtered by action. */
+export async function listAuditEvents(options: {
+  limit?: number;
+  action?: string;
+} = {}): Promise<Page<AuditEvent>> {
+  const params = new URLSearchParams({ limit: String(options.limit ?? 50) });
+  if (options.action) {
+    params.set("action", options.action);
+  }
+  return serverApiRequest<Page<AuditEvent>>(`/api/v1/audit/events?${params.toString()}`);
 }

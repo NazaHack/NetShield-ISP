@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, health, scans, targets, tenants, users
+from app.api.v1.endpoints import audit, auth, health, scans, targets, tenants, users
 
 api_router = APIRouter()
 
@@ -25,6 +25,7 @@ api_router.include_router(auth.router)
 # Administrator only.
 api_router.include_router(tenants.router)
 api_router.include_router(users.admin_users_router)
+api_router.include_router(audit.router)
 
 # Tenant-scoped.
 api_router.include_router(targets.router)

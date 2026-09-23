@@ -1,4 +1,4 @@
-import { Building2, LogOut, RadioTower, ShieldCheck } from "lucide-react";
+import { Building2, LogOut, RadioTower, ScrollText, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { JSX, ReactNode } from "react";
@@ -83,6 +83,12 @@ export default async function ConsoleLayout({
                   <Link href="/admin/clients">
                     <Building2 className="size-4" aria-hidden="true" />
                     Clients
+                  </Link>
+                </Button>
+                <Button asChild variant="secondary" size="sm" className="gap-2">
+                  <Link href="/admin/audit">
+                    <ScrollText className="size-4" aria-hidden="true" />
+                    Audit
                   </Link>
                 </Button>
               </nav>

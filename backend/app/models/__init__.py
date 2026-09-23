@@ -9,6 +9,7 @@ Ownership chain: a :class:`Tenant` owns its :class:`NetworkTarget` ranges and it
 tenant cascades through all of it.
 """
 
+from app.models.audit import AuditAction, AuditEvent
 from app.models.enums import (
     SCAN_STATUS_ENUM_NAME,
     USER_ROLE_ENUM_NAME,
@@ -32,6 +33,8 @@ __all__ = [
     "SCAN_STATUS_ENUM_NAME",
     "TENANT_TABLE_NAME",
     "USER_ROLE_ENUM_NAME",
+    "AuditAction",
+    "AuditEvent",
     "NetworkTarget",
     "OpenPort",
     "Scan",

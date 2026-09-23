@@ -180,3 +180,18 @@ export function isTerminal(status: ScanStatus): boolean {
 export function isPlatformAdmin(user: User): boolean {
   return user.role === "PLATFORM_ADMIN";
 }
+
+/** One entry in the audit trail. */
+export interface AuditEvent {
+  id: string;
+  created_at: string;
+  action: string;
+  actor_user_id: string | null;
+  actor_email: string | null;
+  actor_role: string | null;
+  tenant_id: string | null;
+  tenant_code_name: string | null;
+  target: string | null;
+  detail: Record<string, unknown> | null;
+  source_ip: string | null;
+}

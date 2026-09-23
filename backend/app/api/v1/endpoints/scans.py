@@ -14,7 +14,8 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.network import is_contained_in
 from app.core.security import Principal
-from app.models import Scan, ScanStatus
+from app.models import AuditAction, Scan, ScanStatus
+from app.repositories.audit import add_event
 from app.repositories.network_target import list_target_ranges
 from app.repositories.scan import (
     count_active_scans,
@@ -233,6 +234,23 @@ async def launch_scan(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The scan could not be queued. Try again shortly.",
         ) from exc
+
+    # The scan row and its dispatch are already committed; record the audit event
+    # in its own commit so a trail write cannot undo a queued scan.
+    add_event(
+        session,
+        action=AuditAction.SCAN_LAUNCHED,
+        actor=principal,
+        tenant_id=tenant_id,
+        target=str(scan.id),
+        detail={
+            "profile": payload.profile.value,
+            "targets": list(selection.accepted),
+            "addresses": selection.total_addresses,
+            "adhoc": is_adhoc,
+        },
+    )
+    await session.commit()
 
     logger.info(
         "api.scan_launched",

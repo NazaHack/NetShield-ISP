@@ -19,6 +19,8 @@ from app.core.ratelimit import (
     reset_login_counters,
 )
 from app.core.security import create_access_token
+from app.models import AuditAction
+from app.repositories.audit import add_event
 from app.repositories.user import get_user_by_email, get_user_by_id, record_successful_login
 from app.schemas.auth import LoginRequest, LoginResponse, PasswordChange, UserRead
 
@@ -66,6 +68,13 @@ async def login(payload: LoginRequest, request: Request, session: SessionDep) ->
     decision = await check_login_allowed(email=payload.email, ip=ip)
     if not decision.allowed:
         logger.warning("api.login_rate_limited", email=payload.email.lower(), ip=ip)
+        add_event(
+            session,
+            action=AuditAction.LOGIN_RATE_LIMITED,
+            actor_email=payload.email,
+            source_ip=ip,
+        )
+        await session.commit()
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many sign-in attempts. Try again later.",
@@ -81,6 +90,14 @@ async def login(payload: LoginRequest, request: Request, session: SessionDep) ->
         await record_failed_login(email=payload.email, ip=ip)
         reason = "bad credentials" if not credentials_ok else "disabled"
         logger.warning("api.login_failed", email=payload.email.lower(), ip=ip, reason=reason)
+        add_event(
+            session,
+            action=AuditAction.LOGIN_FAILED,
+            actor_email=payload.email,
+            source_ip=ip,
+            detail={"reason": reason},
+        )
+        await session.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=_INVALID_CREDENTIALS,
@@ -95,6 +112,15 @@ async def login(payload: LoginRequest, request: Request, session: SessionDep) ->
         user.password_hash = hash_password(payload.password)
 
     await record_successful_login(session, user=user)
+    add_event(
+        session,
+        action=AuditAction.LOGIN_SUCCEEDED,
+        actor_user_id=user.id,
+        actor_email=user.email,
+        actor_role=user.role.value,
+        tenant_id=user.tenant_id,
+        source_ip=ip,
+    )
     await session.commit()
     await session.refresh(user)
 
@@ -173,5 +199,12 @@ async def change_password(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
 
+    add_event(
+        session,
+        action=AuditAction.PASSWORD_CHANGED,
+        actor=principal,
+        tenant_id=principal.tenant_id,
+        target=user.email,
+    )
     await session.commit()
     logger.info("api.password_changed", user_id=str(user.id))

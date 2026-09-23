@@ -17,7 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path, status
 from app.api.dependencies import AdminDep, SessionDep, TenantScopeDep, not_found
 from app.core.logging import get_logger
 from app.core.passwords import PasswordTooWeakError, hash_password
-from app.models import UserRole
+from app.models import AuditAction, UserRole
+from app.repositories.audit import add_event
 from app.repositories.user import (
     count_platform_admins,
     create_user,
@@ -100,6 +101,13 @@ async def create_admin_user(
         role=UserRole.PLATFORM_ADMIN,
         tenant_id=None,
     )
+    add_event(
+        session,
+        action=AuditAction.USER_CREATED,
+        actor=admin,
+        target=user.email,
+        detail={"role": user.role.value},
+    )
     await session.commit()
 
     logger.info("api.admin_created", created_user_id=str(user.id), created_by=str(admin.user_id))
@@ -162,7 +170,15 @@ async def delete_user_endpoint(
         )
 
     email = user.email
+    role = user.role.value
     await delete_user(session, user=user)
+    add_event(
+        session,
+        action=AuditAction.USER_DELETED,
+        actor=admin,
+        target=email,
+        detail={"role": role},
+    )
     await session.commit()
 
     logger.warning(
@@ -197,6 +213,13 @@ async def reset_user_password(
         raise not_found()
 
     user.password_hash = _hash_or_reject(payload.new_password)
+    add_event(
+        session,
+        action=AuditAction.PASSWORD_RESET,
+        actor=admin,
+        tenant_id=user.tenant_id,
+        target=user.email,
+    )
     await session.commit()
 
     logger.warning(
@@ -237,6 +260,15 @@ async def create_tenant_user(
         password_hash=_hash_or_reject(payload.password),
         role=UserRole.TENANT_USER,
         tenant_id=scope.tenant_id,
+    )
+    add_event(
+        session,
+        action=AuditAction.USER_CREATED,
+        actor=scope.principal,
+        tenant_id=scope.tenant_id,
+        tenant_code_name=scope.tenant.code_name,
+        target=user.email,
+        detail={"role": user.role.value},
     )
     await session.commit()
 
@@ -302,6 +334,14 @@ async def delete_tenant_user(
 
     email = user.email
     await delete_user(session, user=user)
+    add_event(
+        session,
+        action=AuditAction.USER_DELETED,
+        actor=scope.principal,
+        tenant_id=scope.tenant_id,
+        tenant_code_name=scope.tenant.code_name,
+        target=email,
+    )
     await session.commit()
 
     logger.warning(
@@ -339,6 +379,14 @@ async def reset_tenant_user_password(
         raise not_found()
 
     user.password_hash = _hash_or_reject(payload.new_password)
+    add_event(
+        session,
+        action=AuditAction.PASSWORD_RESET,
+        actor=scope.principal,
+        tenant_id=scope.tenant_id,
+        tenant_code_name=scope.tenant.code_name,
+        target=user.email,
+    )
     await session.commit()
 
     logger.warning(
