@@ -1,0 +1,168 @@
+# =============================================================================
+#  NetShield-ISP — Celery worker image (scan executor)
+#
+#  This is the ONLY image in the platform that ships Nmap.
+#
+#  Privilege model
+#  ---------------
+#  Nmap needs raw sockets for SYN (-sS), UDP (-sU) and OS detection (-O).
+#  Running the whole container as root to obtain them would be careless, so:
+#    1. Linux file capabilities are attached directly to the Nmap binary
+#       (cap_net_raw for raw sockets, cap_net_bind_service for low source ports
+#       such as `--source-port 53`).
+#    2. The container still runs as the unprivileged `netshield` user.
+#    3. docker-compose drops ALL capabilities and re-adds only those two to the
+#       container bounding set, which is what makes the file caps effective.
+#  Result: raw-socket scanning without a root process anywhere in the container.
+#
+#  CAP_NET_ADMIN is deliberately NOT requested. Nmap does not need it for any
+#  scan type this platform runs, it is absent from the default build-time
+#  capability set (so an `+e` grant makes every `execve` of Nmap fail with
+#  EPERM), and granting a capability no process can use is pure attack surface.
+# =============================================================================
+
+ARG PYTHON_VERSION=3.12
+
+# -----------------------------------------------------------------------------
+FROM python:${PYTHON_VERSION}-slim-bookworm AS base
+# -----------------------------------------------------------------------------
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONFAULTHANDLER=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_ROOT_USER_ACTION=ignore \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:${PATH}" \
+    NMAP_BINARY_PATH=/usr/bin/nmap \
+    SCAN_ARTIFACT_DIR=/var/lib/netshield/scans
+
+# Nmap decides whether it may run raw-socket scans by checking geteuid(), not by
+# checking its own capabilities. Without this variable it aborts with "You
+# requested a scan type which requires root privileges" even though the file
+# capabilities granted below make the scan perfectly possible. Setting it is the
+# documented way to combine Nmap with the Linux capabilities system.
+ENV NMAP_PRIVILEGED=1
+
+# --- Operating-system level scanning toolchain -------------------------------
+# nmap          : the scanner itself, plus nmap-services / nmap-os-db databases
+# libcap2-bin   : setcap/getcap, used at build time and kept so that operators
+#                 can verify the privilege model on a running container
+# iproute2      : interface/route introspection used when selecting a source iface
+# dnsutils      : reverse-DNS enrichment of discovered hosts
+RUN set -eux; \
+    apt-get update; \
+    apt-get install --no-install-recommends -y \
+        nmap \
+        libcap2-bin \
+        iproute2 \
+        dnsutils \
+        libpq5 \
+        ca-certificates \
+        tini; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*; \
+    # Confirm the scanner runs. This must happen BEFORE the capability grant
+    # below, for the reason documented there.
+    nmap --version
+
+# Grant raw-socket capability to the binary rather than to the process owner.
+#
+# This is deliberately the last operation that touches the Nmap binary, and it
+# is verified by reading the extended attribute rather than by executing Nmap.
+# The kernel refuses `execve` with EPERM whenever a file's permitted capability
+# set contains anything outside the calling process's bounding set, and build
+# environments differ: Docker's default set includes CAP_NET_RAW, Podman's does
+# not. Running Nmap after this step would therefore fail the build on Podman
+# while passing on Docker. Reading the xattr needs no privilege and still
+# catches the real risk, which is a builder or storage driver silently dropping
+# extended attributes.
+#
+# The runtime side is covered by the `netshield.system.health_check` task, which
+# reports the bounding set, the file capabilities and the NoNewPrivs flag.
+RUN set -eux; \
+    setcap cap_net_raw,cap_net_bind_service+eip /usr/bin/nmap; \
+    getcap /usr/bin/nmap; \
+    getcap /usr/bin/nmap | grep -q cap_net_raw
+
+ARG APP_UID=10001
+ARG APP_GID=10001
+RUN set -eux; \
+    groupadd --gid "${APP_GID}" netshield; \
+    useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home --shell /usr/sbin/nologin netshield; \
+    mkdir -p "${SCAN_ARTIFACT_DIR}"; \
+    chown -R netshield:netshield "${SCAN_ARTIFACT_DIR}"; \
+    chmod 0750 "${SCAN_ARTIFACT_DIR}"
+
+WORKDIR /app
+
+COPY --chown=netshield:netshield requirements.txt ./
+RUN set -eux; \
+    apt-get update; \
+    apt-get install --no-install-recommends -y build-essential libpq-dev; \
+    python -m venv "${VIRTUAL_ENV}"; \
+    "${VIRTUAL_ENV}/bin/pip" install --upgrade pip setuptools wheel; \
+    "${VIRTUAL_ENV}/bin/pip" install -r requirements.txt; \
+    apt-get purge -y --auto-remove build-essential libpq-dev; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*; \
+    chown -R netshield:netshield "${VIRTUAL_ENV}"
+
+COPY --chown=netshield:netshield . .
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+# -----------------------------------------------------------------------------
+FROM base AS development
+# -----------------------------------------------------------------------------
+
+ENV ENVIRONMENT=development \
+    CELERY_CONCURRENCY=4 \
+    CELERY_LOG_LEVEL=INFO \
+    CELERY_QUEUES=scans,default
+
+# See the API image: the bind-mounted source tree is not writable by this user.
+ENV RUFF_CACHE_DIR=/tmp/netshield-cache/ruff \
+    MYPY_CACHE_DIR=/tmp/netshield-cache/mypy \
+    PYTEST_ADDOPTS="-o cache_dir=/tmp/netshield-cache/pytest"
+
+COPY --chown=netshield:netshield requirements-dev.txt ./
+RUN set -eux; \
+    "${VIRTUAL_ENV}/bin/pip" install -r requirements-dev.txt; \
+    chown -R netshield:netshield "${VIRTUAL_ENV}"
+
+USER netshield
+
+# watchmedo restarts the worker on source changes — Celery has no native reloader.
+CMD ["sh", "-c", "exec watchmedo auto-restart \
+     --directory=./app \
+     --pattern='*.py' \
+     --recursive \
+     -- celery -A app.workers.celery_app:celery_app worker \
+     --loglevel=${CELERY_LOG_LEVEL} \
+     --concurrency=${CELERY_CONCURRENCY} \
+     --queues=${CELERY_QUEUES} \
+     --hostname=worker@%h"]
+
+# -----------------------------------------------------------------------------
+FROM base AS production
+# -----------------------------------------------------------------------------
+
+ENV ENVIRONMENT=production \
+    CELERY_CONCURRENCY=4 \
+    CELERY_LOG_LEVEL=INFO \
+    CELERY_QUEUES=scans,default
+
+USER netshield
+
+# `--max-tasks-per-child` recycles workers so a leaking Nmap wrapper cannot
+# accumulate file descriptors across thousands of scans.
+CMD ["sh", "-c", "exec celery -A app.workers.celery_app:celery_app worker \
+     --loglevel=${CELERY_LOG_LEVEL} \
+     --concurrency=${CELERY_CONCURRENCY} \
+     --queues=${CELERY_QUEUES} \
+     --hostname=worker@%h \
+     --max-tasks-per-child=100 \
+     --without-gossip \
+     --without-mingle"]

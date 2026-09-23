@@ -1,0 +1,25 @@
+# =============================================================================
+#  NetShield-ISP — backend development & CI dependencies
+# =============================================================================
+-r requirements.txt
+
+# --- Testing -----------------------------------------------------------------
+pytest~=8.3.0
+pytest-asyncio~=0.24.0
+pytest-cov~=6.0.0
+anyio~=4.7.0
+faker~=33.1.0
+
+# --- Developer experience ----------------------------------------------------
+# `watchmedo auto-restart` gives the Celery worker hot reload in development.
+watchdog~=6.0.0
+
+# --- Static analysis ---------------------------------------------------------
+ruff~=0.8.0
+mypy~=1.13.0
+types-requests~=2.32.0
+types-defusedxml~=0.7.0
+
+# --- Security scanning -------------------------------------------------------
+bandit~=1.8.0
+pip-audit~=2.7.0

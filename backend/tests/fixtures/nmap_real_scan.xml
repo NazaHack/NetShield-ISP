@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<?xml-stylesheet href="file:///usr/bin/../share/nmap/nmap.xsl" type="text/xsl"?>
+<!-- Nmap 7.93 scan initiated Mon Sep 21 21:18:32 2026 as: nmap -sV -T4 -p 1-10000 -&#45;open -n -&#45;privileged -oX - db redis -->
+<nmaprun scanner="nmap" args="nmap -sV -T4 -p 1-10000 -&#45;open -n -&#45;privileged -oX - db redis" start="1790025512" startstr="Mon Sep 21 21:18:32 2026" version="7.93" xmloutputversion="1.05">
+<scaninfo type="syn" protocol="tcp" numservices="10000" services="1-10000"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<hosthint><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="10.89.0.3" addrtype="ipv4"/>
+<address addr="2E:FF:0F:03:4F:14" addrtype="mac"/>
+<hostnames>
+<hostname name="db" type="user"/>
+</hostnames>
+</hosthint>
+<hosthint><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="10.89.0.2" addrtype="ipv4"/>
+<address addr="BE:55:28:8F:77:85" addrtype="mac"/>
+<hostnames>
+<hostname name="redis" type="user"/>
+</hostnames>
+</hosthint>
+<host starttime="1790025512" endtime="1790025529"><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="10.89.0.3" addrtype="ipv4"/>
+<address addr="2E:FF:0F:03:4F:14" addrtype="mac"/>
+<hostnames>
+<hostname name="db" type="user"/>
+</hostnames>
+<ports><extraports state="closed" count="9999">
+<extrareasons reason="reset" count="9999" proto="tcp" ports="1-5431,5433-10000"/>
+</extraports>
+<port protocol="tcp" portid="5432"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="postgresql" product="PostgreSQL DB" version="9.6.0 or later" servicefp="SF-Port5432-TCP:V=7.93%I=7%D=9/21%Time=6AB19F2F%P=x86_64-pc-linux-gnu%r(SMBProgNeg,8C,&quot;E\0\0\0\x8bSFATAL\0VFATAL\0C0A000\0Munsupported\x20frontend\x20protocol\x2065363\.19778:\x20server\x20supports\x203\.0\x20to\x203\.0\0Fpostmaster\.c\0L2169\0RProcessStartupPacket\0\0&quot;);" method="probed" conf="10"><cpe>cpe:/a:postgresql:postgresql</cpe></service></port>
+</ports>
+<times srtt="4" rttvar="0" to="100000"/>
+</host>
+<host starttime="1790025512" endtime="1790025529"><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="10.89.0.2" addrtype="ipv4"/>
+<address addr="BE:55:28:8F:77:85" addrtype="mac"/>
+<hostnames>
+<hostname name="redis" type="user"/>
+</hostnames>
+<ports><extraports state="closed" count="9999">
+<extrareasons reason="reset" count="9999" proto="tcp" ports="1-6378,6380-10000"/>
+</extraports>
+<port protocol="tcp" portid="6379"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="redis" product="Redis key-value store" method="probed" conf="10"/></port>
+</ports>
+<times srtt="4" rttvar="0" to="100000"/>
+</host>
+<runstats><finished time="1790025529" timestr="Mon Sep 21 21:18:49 2026" summary="Nmap done at Mon Sep 21 21:18:49 2026; 2 IP addresses (2 hosts up) scanned in 17.10 seconds" elapsed="17.10" exit="success"/><hosts up="2" down="0" total="2"/>
+</runstats>
+</nmaprun>

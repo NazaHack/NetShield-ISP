@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Design tokens.
+ *
+ * Each colour is stored as bare HSL channels so Tailwind can compose them with
+ * opacity modifiers (`bg-primary/10`). The `.dark` block re-binds the same
+ * token names, which is what makes theme switching a single class toggle.
+ *
+ * The severity scale is chosen for contrast against both surfaces and remains
+ * distinguishable under the common forms of colour vision deficiency: severity
+ * is always paired with a text label in the UI, never encoded by colour alone.
+ */
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+
+    --severity-critical: 0 72% 45%;
+    --severity-high: 21 90% 48%;
+    --severity-medium: 38 92% 45%;
+    --severity-low: 199 89% 42%;
+    --severity-info: 215 16% 47%;
+
+    --radius: 0.5rem;
+
+    /* System font stacks. Deliberately not `next/font`: the build must succeed
+       on an air-gapped network, and downloading a webfont at build time would
+       make that impossible. */
+    --font-sans:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+      Arial, "Noto Sans", sans-serif;
+    --font-mono:
+      ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+      monospace;
+  }
+
+  .dark {
+    --background: 222 47% 7%;
+    --foreground: 210 40% 96%;
+
+    --card: 222 45% 10%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 222 45% 10%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 96%;
+
+    --destructive: 0 63% 50%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 217 91% 60%;
+
+    --severity-critical: 0 84% 60%;
+    --severity-high: 21 90% 58%;
+    --severity-medium: 38 92% 55%;
+    --severity-low: 199 89% 55%;
+    --severity-info: 215 20% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
+  }
+
+  /* Scan output and IP addresses are read column-aligned; keep them tabular. */
+  .font-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
