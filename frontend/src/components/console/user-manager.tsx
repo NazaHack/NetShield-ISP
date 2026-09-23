@@ -1,12 +1,21 @@
 "use client";
 
-import { Loader2, Trash2, UserPlus } from "lucide-react";
-import { useActionState, useEffect, useRef, type JSX } from "react";
+import { KeyRound, Loader2, Trash2, UserPlus } from "lucide-react";
+import { useActionState, useEffect, useRef, useState, type JSX } from "react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -20,6 +29,7 @@ import {
 import {
   createTenantUserAction,
   deleteTenantUserAction,
+  resetTenantUserPasswordAction,
   type ActionResult,
 } from "@/lib/actions";
 import type { User } from "@/lib/api/types";
@@ -63,6 +73,76 @@ function RemoveUserButton({
         )}
       </Button>
     </form>
+  );
+}
+
+/** Reset-password button that opens a dialog with a new-password field. */
+function ResetPasswordButton({
+  tenantId,
+  user,
+}: {
+  tenantId: string;
+  user: User;
+}): JSX.Element {
+  const [state, formAction, isPending] = useActionState(resetTenantUserPasswordAction, INITIAL);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (state.message) {
+      toast[state.ok ? "success" : "error"](state.message);
+    }
+    if (state.ok) {
+      setOpen(false);
+    }
+  }, [state]);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label={`Reset password for ${user.email}`}>
+          <KeyRound className="size-4" aria-hidden="true" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Reset password</DialogTitle>
+          <DialogDescription>
+            Set a new password for {user.email}. Only a hash is stored, so give the new password
+            to its owner; they can change it afterwards.
+          </DialogDescription>
+        </DialogHeader>
+        <form action={formAction} className="flex flex-col gap-4">
+          <input type="hidden" name="tenantId" value={tenantId} />
+          <input type="hidden" name="userId" value={user.id} />
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={`reset-${user.id}`}>New password</Label>
+            <Input
+              id={`reset-${user.id}`}
+              name="new_password"
+              type="password"
+              required
+              minLength={MIN_PASSWORD_LENGTH}
+              autoComplete="new-password"
+            />
+          </div>
+          {state.message && !state.ok ? (
+            <Alert variant="destructive">
+              <AlertDescription>{state.message}</AlertDescription>
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button type="submit" disabled={isPending} className="gap-2">
+              {isPending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <KeyRound className="size-4" aria-hidden="true" />
+              )}
+              Reset password
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -168,7 +248,7 @@ export function UserManager({
               <TableHead>Email</TableHead>
               <TableHead className="hidden sm:table-cell">Last sign-in</TableHead>
               <TableHead className="w-24">Status</TableHead>
-              <TableHead className="w-16 text-right">Remove</TableHead>
+              <TableHead className="w-24 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -187,7 +267,10 @@ export function UserManager({
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <RemoveUserButton tenantId={tenantId} user={user} />
+                  <div className="flex items-center justify-end gap-1">
+                    <ResetPasswordButton tenantId={tenantId} user={user} />
+                    <RemoveUserButton tenantId={tenantId} user={user} />
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

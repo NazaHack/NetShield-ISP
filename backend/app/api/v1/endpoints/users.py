@@ -26,7 +26,7 @@ from app.repositories.user import (
     get_user_by_id,
     list_users,
 )
-from app.schemas.auth import UserCreate, UserRead
+from app.schemas.auth import PasswordReset, UserCreate, UserRead
 from app.schemas.common import Page, Pagination, pagination_params
 
 logger = get_logger(__name__)
@@ -170,6 +170,43 @@ async def delete_user_endpoint(
     )
 
 
+@admin_users_router.post(
+    "/{user_id}/reset-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Reset any account's password",
+)
+async def reset_user_password(
+    user_id: UserIdPath,
+    payload: PasswordReset,
+    session: SessionDep,
+    admin: AdminDep,
+) -> None:
+    """Set a new password for any account, for recovery when its owner is locked out.
+
+    Only the new password is supplied: the point of a reset is that the owner no
+    longer has the old one. The administrator hands the new password to them out
+    of band, and they may then change it themselves.
+
+    Raises:
+        HTTPException: 404 when the account does not exist, 422 when the new
+            password is too weak.
+    """
+    user = await get_user_by_id(session, user_id=user_id)
+    if user is None:
+        raise not_found()
+
+    user.password_hash = _hash_or_reject(payload.new_password)
+    await session.commit()
+
+    logger.warning(
+        "api.password_reset",
+        target_user_id=str(user_id),
+        email=user.email,
+        by=str(admin.user_id),
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Tenant members
 # --------------------------------------------------------------------------- #
@@ -271,5 +308,42 @@ async def delete_tenant_user(
         "api.tenant_user_deleted",
         deleted_user_id=str(user_id),
         email=email,
+        tenant_id=str(scope.tenant_id),
+    )
+
+
+@tenant_users_router.post(
+    "/{user_id}/reset-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Reset one of this client's sign-in passwords",
+)
+async def reset_tenant_user_password(
+    user_id: UserIdPath,
+    payload: PasswordReset,
+    session: SessionDep,
+    scope: TenantScopeDep,
+) -> None:
+    """Set a new password for an account belonging to this client.
+
+    The lookup is scoped to the tenant, so an account in another client is not
+    found rather than forbidden. As with creation, only the new password is
+    given; the owner receives it out of band and can change it afterwards.
+
+    Raises:
+        HTTPException: 404 when the account is not this client's, 422 when the
+            new password is too weak.
+    """
+    user = await get_user_by_id(session, user_id=user_id)
+    if user is None or user.tenant_id != scope.tenant_id:
+        raise not_found()
+
+    user.password_hash = _hash_or_reject(payload.new_password)
+    await session.commit()
+
+    logger.warning(
+        "api.tenant_user_password_reset",
+        target_user_id=str(user_id),
+        email=user.email,
         tenant_id=str(scope.tenant_id),
     )

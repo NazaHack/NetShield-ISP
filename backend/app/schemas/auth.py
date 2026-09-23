@@ -124,3 +124,16 @@ class PasswordChange(BaseModel):
 
     current_password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
     new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+
+
+class PasswordReset(BaseModel):
+    """Payload for an administrator resetting another account's password.
+
+    No current password: the point of a reset is that the person locked out no
+    longer has it. The caller's own authority is what permits the change, so
+    they hand the new password to the account's owner out of band.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)

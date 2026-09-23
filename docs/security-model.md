@@ -264,6 +264,8 @@ confusion. Issuer and audience are verified, so a credential minted for a siblin
 the key is still rejected. Incoherent claim sets, such as an admin token that also names a
 tenant, are refused rather than resolved by guessing.
 
+**Password reset.** An administrator can set a new password for any account it manages (`POST /users/{id}/reset-password`, or the tenant-scoped equivalent), for recovery when the owner is locked out. No current password is required, since the point is that the owner no longer has it; the caller's own authority permits the change and they hand the new password over out of band. The reset is subject to the same strength rule as creation.
+
 **Revocation.** The account named by a token is re-read from the database on every request, and
 its tenant is checked against the token's. Disabling or deleting a user therefore revokes their
 access immediately rather than at the token's expiry. Lifetimes remain short via

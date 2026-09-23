@@ -155,3 +155,15 @@ export async function deleteTenantUser(tenantId: string, userId: string): Promis
     method: "DELETE",
   });
 }
+
+/** Reset the password of one of a client's sign-ins. */
+export async function resetTenantUserPassword(
+  tenantId: string,
+  userId: string,
+  newPassword: string,
+): Promise<void> {
+  await serverApiRequest<undefined>(
+    `/api/v1/tenants/${tenantId}/users/${userId}/reset-password`,
+    { method: "POST", body: { new_password: newPassword } },
+  );
+}

@@ -12,6 +12,7 @@ import {
   deleteTenant,
   deleteTenantUser,
   launchAdhocScan,
+  resetTenantUserPassword,
   launchScan,
 } from "@/lib/api/console";
 import type { LoginResponse, ScanProfile } from "@/lib/api/types";
@@ -323,6 +324,34 @@ export async function deleteTenantUserAction(
 
   revalidatePath(`/admin/clients/${tenantId}`);
   return { ok: true, message: "Sign-in removed." };
+}
+
+/** Reset the password of a client's sign-in.
+ *
+ * The new password is validated for length the same way creation is; the API
+ * enforces the real rule and answers 422 if it is too weak.
+ */
+export async function resetTenantUserPasswordAction(
+  _previous: ActionResult,
+  formData: FormData,
+): Promise<ActionResult> {
+  const tenantId = String(formData.get("tenantId") ?? "");
+  const userId = String(formData.get("userId") ?? "");
+  const newPassword = String(formData.get("new_password") ?? "");
+
+  if (!tenantId || !userId || !newPassword) {
+    return { ok: false, message: "A new password is required." };
+  }
+
+  try {
+    await resetTenantUserPassword(tenantId, userId, newPassword);
+  } catch (error) {
+    redirectIfSignedOut(error);
+    return { ok: false, message: describe(error, "The password could not be reset.") };
+  }
+
+  revalidatePath(`/admin/clients/${tenantId}`);
+  return { ok: true, message: "Password reset. Give the new one to its owner." };
 }
 
 
