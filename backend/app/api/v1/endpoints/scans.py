@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from typing import Annotated
 
 from celery.exceptions import CeleryError
@@ -13,8 +14,9 @@ from app.api.dependencies import PrincipalDep, SessionDep, TenantScopeDep, not_f
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.network import is_contained_in
+from app.core.risk import Severity, assess_port
 from app.core.security import Principal
-from app.models import AuditAction, Scan, ScanStatus
+from app.models import AuditAction, Scan, ScanResult, ScanStatus
 from app.repositories.audit import add_event
 from app.repositories.network_target import list_target_ranges
 from app.repositories.scan import (
@@ -28,6 +30,9 @@ from app.repositories.scan import (
 from app.repositories.tenant import get_adhoc_workspace, get_or_create_adhoc_workspace
 from app.schemas.common import Page, Pagination, pagination_params
 from app.schemas.scan import (
+    AssessmentSummary,
+    NotableFinding,
+    OpenPortRead,
     ScanDetailRead,
     ScanDiffRead,
     ScanLaunchRequest,
@@ -46,6 +51,76 @@ scans_router = APIRouter(prefix="/scans", tags=["scans"])
 tenant_scans_router = APIRouter(prefix="/tenants/{tenant_id}/scans", tags=["scans"])
 
 ScanIdPath = Annotated[uuid.UUID, Path(description="Scan identifier.")]
+
+#: Findings at or above this severity are called out in the summary.
+_NOTABLE_THRESHOLD = Severity.HIGH
+
+#: How many notable findings the summary carries, worst first. A whole /24 of
+#: the same exposure should headline, not flood the report.
+_MAX_NOTABLE = 100
+
+
+def _assess_results(
+    results: Sequence[ScanResult],
+) -> tuple[list[ScanResultRead], AssessmentSummary]:
+    """Enrich each port with an exposure verdict and roll the scan up.
+
+    Pure over the stored findings, like the diff: it changes nothing and can be
+    recomputed at any time. Returns the per-host results with severities filled
+    in, and a scan-level summary.
+    """
+    read_results: list[ScanResultRead] = []
+    counts: dict[str, int] = {level.label: 0 for level in Severity}
+    notable: list[NotableFinding] = []
+    highest = Severity.INFO
+
+    for result in results:
+        ports: list[OpenPortRead] = []
+        for port in result.open_ports:
+            verdict = assess_port(port)
+            counts[verdict.severity.label] += 1
+            highest = max(highest, verdict.severity)
+            ports.append(
+                OpenPortRead(
+                    port=port["port"],
+                    protocol=port["protocol"],
+                    service=port.get("service"),
+                    version=port.get("version"),
+                    severity=verdict.severity.label,
+                    severity_reason=verdict.reason,
+                )
+            )
+            if verdict.severity >= _NOTABLE_THRESHOLD:
+                notable.append(
+                    NotableFinding(
+                        host_ip=result.host_ip,
+                        port=port["port"],
+                        protocol=port["protocol"],
+                        service=port.get("service"),
+                        severity=verdict.severity.label,
+                        reason=verdict.reason,
+                    )
+                )
+        read_results.append(
+            ScanResultRead(
+                id=result.id,
+                host_ip=result.host_ip,
+                open_ports=ports,
+                created_at=result.created_at,
+            )
+        )
+
+    # Worst first, then by host and port so the order is stable across runs.
+    notable.sort(
+        key=lambda finding: (-Severity[finding.severity.upper()], finding.host_ip, finding.port)
+    )
+
+    summary = AssessmentSummary(
+        counts=counts,
+        highest_severity=highest.label,
+        notable=notable[:_MAX_NOTABLE],
+    )
+    return read_results, summary
 
 
 async def _build_diff(
@@ -369,6 +444,8 @@ async def get_scan_detail(
     results = await list_scan_results(session, tenant_id=scan.tenant_id, scan_id=scan.id)
     diff = await _build_diff(session, tenant_id=scan.tenant_id, scan=scan)
 
+    read_results, assessment = _assess_results(results)
+
     return ScanDetailRead(
         id=scan.id,
         tenant_id=scan.tenant_id,
@@ -378,7 +455,8 @@ async def get_scan_detail(
         is_finished=scan.status.is_terminal,
         host_count=len(results),
         open_port_count=sum(len(result.open_ports) for result in results),
-        results=[ScanResultRead.model_validate(result) for result in results],
+        results=read_results,
+        assessment=assessment if scan.status is ScanStatus.COMPLETED else None,
         diff=diff,
     )
 

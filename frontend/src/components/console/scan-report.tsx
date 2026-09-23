@@ -2,6 +2,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import type { JSX } from "react";
 
+import { AssessmentPanel } from "@/components/console/assessment-summary";
 import { ChangeAlerts } from "@/components/console/change-alerts";
 import { ExportButtons } from "@/components/console/export-buttons";
 import { HostTable } from "@/components/console/host-table";
@@ -94,6 +95,10 @@ export function ScanReport({
       </Card>
 
       <ChangeAlerts diff={scan.diff} />
+
+      {scan.status === "COMPLETED" && scan.assessment ? (
+        <AssessmentPanel assessment={scan.assessment} />
+      ) : null}
 
       {scan.status === "COMPLETED" ? (
         <Card>

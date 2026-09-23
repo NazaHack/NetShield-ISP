@@ -123,11 +123,15 @@ class ScanLaunchResponse(BaseModel):
 
 
 class OpenPortRead(BaseModel):
-    """One open port as reported by the scanner.
+    """One open port as reported by the scanner, with an exposure verdict.
 
     ``service`` and ``version`` are banner text from the scanned host. They have
     been stripped of control characters and length-bounded on the way in, but a
     client rendering them must still treat them as untrusted content.
+
+    ``severity`` and ``severity_reason`` are the platform's own assessment of
+    what exposing this port implies, derived on read. They are triage, not a
+    vulnerability finding: see ``app.core.risk``.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -136,6 +140,42 @@ class OpenPortRead(BaseModel):
     protocol: str
     service: str | None = None
     version: str | None = None
+    severity: str = Field(default="info", description="One of info, low, medium, high, critical.")
+    severity_reason: str = Field(default="", description="Why the port earned that severity.")
+
+
+class NotableFinding(BaseModel):
+    """One high- or critical-severity finding, tied to its host."""
+
+    model_config = ConfigDict(frozen=True)
+
+    host_ip: str
+    port: int
+    protocol: str
+    service: str | None
+    severity: str
+    reason: str
+
+
+class AssessmentSummary(BaseModel):
+    """A scan-level rollup of the exposure assessment.
+
+    Gives an operator the headline before the host table: how many findings at
+    each severity, and the concerning ones called out with the host they are on.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    counts: dict[str, int] = Field(
+        default_factory=dict, description="Open-port count per severity level."
+    )
+    highest_severity: str = Field(
+        default="info", description="The most severe finding in the whole scan."
+    )
+    notable: list[NotableFinding] = Field(
+        default_factory=list,
+        description="Findings at high or critical severity, worst first.",
+    )
 
 
 class ScanResultRead(BaseModel):
@@ -224,4 +264,8 @@ class ScanDetailRead(BaseModel):
     host_count: int
     open_port_count: int
     results: list[ScanResultRead]
+    assessment: AssessmentSummary | None = Field(
+        default=None,
+        description="Exposure assessment of the findings. Present once completed.",
+    )
     diff: ScanDiffRead | None = None

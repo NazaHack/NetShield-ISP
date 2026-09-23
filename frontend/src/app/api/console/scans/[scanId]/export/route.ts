@@ -37,6 +37,9 @@ export async function GET(
         host_count: scan.host_count,
         open_port_count: scan.open_port_count,
       },
+      // The exposure triage, so the exported file carries the same headline the
+      // console shows. Each port under `hosts` already carries its own severity.
+      assessment: scan.assessment,
       hosts: scan.results.map((result) => ({
         host_ip: result.host_ip,
         open_ports: result.open_ports,

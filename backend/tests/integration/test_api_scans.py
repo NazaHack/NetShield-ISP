@@ -688,3 +688,63 @@ async def test_a_client_user_sees_their_clients_scans(
 async def test_own_scans_require_authentication(api_client: AsyncClient) -> None:
     """The history is per account, so it is never anonymous."""
     assert (await api_client.get("/api/v1/scans")).status_code == 401
+
+
+# --------------------------------------------------------------------------- #
+# Exposure assessment in the scan report
+# --------------------------------------------------------------------------- #
+
+
+async def test_a_completed_scan_carries_an_assessment(
+    api_client: AsyncClient, api_tenant: Tenant, sync_db: Session
+) -> None:
+    """The report now rates each finding and summarises the scan.
+
+    A telnet service must rank critical and be called out; an HTTPS port must
+    not. This is what turns the flat port list into something triageable.
+    """
+    scan = _store_completed_scan(
+        sync_db,
+        api_tenant,
+        host_ip="203.0.113.7",
+        ports=[
+            {"port": 23, "protocol": "tcp", "service": "telnet", "version": None},
+            {"port": 443, "protocol": "tcp", "service": "https", "version": None},
+        ],
+    )
+
+    response = await api_client.get(
+        f"/api/v1/scans/{scan.id}", headers=auth(tenant_token(api_tenant.id))
+    )
+    body = response.json()
+
+    assessment = body["assessment"]
+    assert assessment is not None
+    assert assessment["highest_severity"] == "critical"
+    assert assessment["counts"]["critical"] == 1
+    assert assessment["counts"]["low"] == 1
+    assert any(item["port"] == 23 for item in assessment["notable"])
+    assert all(item["port"] != 443 for item in assessment["notable"])
+
+    # Each port in the results now carries its own verdict.
+    ports = {p["port"]: p for p in body["results"][0]["open_ports"]}
+    assert ports[23]["severity"] == "critical"
+    assert ports[23]["severity_reason"]
+    assert ports[443]["severity"] == "low"
+
+
+async def test_a_running_scan_has_no_assessment(
+    api_client: AsyncClient, tenant_with_target: Tenant, _stub_celery: list[dict[str, Any]]
+) -> None:
+    """A partial picture is not assessed; the summary is present only when done."""
+    launched = await api_client.post(
+        "/api/v1/scans/launch",
+        headers=auth(tenant_token(tenant_with_target.id)),
+        json={"tenant_id": str(tenant_with_target.id)},
+    )
+    scan_id = launched.json()["scan_id"]
+
+    response = await api_client.get(
+        f"/api/v1/scans/{scan_id}", headers=auth(tenant_token(tenant_with_target.id))
+    )
+    assert response.json()["assessment"] is None

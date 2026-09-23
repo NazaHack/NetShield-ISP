@@ -90,11 +90,34 @@ export interface NetworkTarget {
  * strips control characters and bounds their length, but they remain
  * attacker-influenced content: render them as text, never as markup.
  */
+/** Exposure severity assigned to a finding. */
+export type Severity = "info" | "low" | "medium" | "high" | "critical";
+
 export interface OpenPort {
   port: number;
   protocol: string;
   service: string | null;
   version: string | null;
+  /** The platform's triage of what exposing this port implies. */
+  severity: Severity;
+  severity_reason: string;
+}
+
+/** One high- or critical-severity finding, tied to its host. */
+export interface NotableFinding {
+  host_ip: string;
+  port: number;
+  protocol: string;
+  service: string | null;
+  severity: Severity;
+  reason: string;
+}
+
+/** Scan-level rollup of the exposure assessment. */
+export interface AssessmentSummary {
+  counts: Record<Severity, number>;
+  highest_severity: Severity;
+  notable: NotableFinding[];
 }
 
 /** Findings for one host within a scan. */
@@ -155,8 +178,18 @@ export interface ScanDetail {
   host_count: number;
   open_port_count: number;
   results: ScanResult[];
+  assessment: AssessmentSummary | null;
   diff: ScanDiff | null;
 }
+
+/** Order severities from most to least concerning, for display. */
+export const SEVERITY_ORDER: readonly Severity[] = [
+  "critical",
+  "high",
+  "medium",
+  "low",
+  "info",
+];
 
 /** Acknowledgement that a scan was queued. */
 export interface ScanLaunchResponse {

@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 
+import { SeverityBadge } from "@/components/console/severity-badge";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -31,6 +32,7 @@ export function HostTable({ results }: { results: ScanResult[] }): JSX.Element {
     <Table>
       <TableHeader>
         <TableRow>
+          <TableHead className="w-28">Severity</TableHead>
           <TableHead className="w-48">Host</TableHead>
           <TableHead className="w-24">Port</TableHead>
           <TableHead className="w-24">Protocol</TableHead>
@@ -42,6 +44,9 @@ export function HostTable({ results }: { results: ScanResult[] }): JSX.Element {
         {results.flatMap((result) =>
           result.open_ports.map((port, index) => (
             <TableRow key={`${result.id}-${port.protocol}-${port.port}`}>
+              <TableCell>
+                <SeverityBadge severity={port.severity} />
+              </TableCell>
               <TableCell className="font-mono font-tabular">
                 {/* The address is printed once per host, not once per port. */}
                 {index === 0 ? result.host_ip : ""}
